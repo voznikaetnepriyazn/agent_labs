@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/joho/godotenv"
 	"github.com/sashabaranov/go-openai"
@@ -32,38 +33,64 @@ func main() {
 		config.BaseURL = baseURL
 	}
 	client := openai.NewClientWithConfig(config)
+
 	ctx := context.Background()
 
 	fmt.Println("🔬 Starting Model Capability Analysis...")
 	fmt.Printf("Endpoint: %s\n", config.BaseURL)
 
-	results := []TestResult{}
+	results := make([]TestResult, 4)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	wg.Add(4)
 
 	// TEST 1: Basic Sanity
-	results = append(results, runTest(ctx, client, "1. Basic Sanity",
-		"Say exactly 'Hello World'",
-		func(response string) bool { return strings.Contains(strings.ToLower(response), "hello world") },
-	))
+	go func() {
+		defer wg.Done()
+		mu.Lock()
+		results = append(results, runTest(ctx, client, "1. Basic Sanity",
+			"Say exactly 'Hello World'",
+			func(response string) bool { return strings.Contains(strings.ToLower(response), "hello world") },
+		))
+		mu.Unlock()
+	}()
 
 	// TEST 2: Instruction Following (Constraints)
-	results = append(results, runTest(ctx, client, "2. Instruction Following",
-		"Reply with the word 'Apple' and nothing else. No punctuation.",
-		func(response string) bool { return strings.TrimSpace(response) == "Apple" },
-	))
+	go func() {
+		defer wg.Done()
+		mu.Lock()
+		results = append(results, runTest(ctx, client, "2. Instruction Following",
+			"Reply with the word 'Apple' and nothing else. No punctuation.",
+			func(response string) bool { return strings.TrimSpace(response) == "Apple" },
+		))
+		mu.Unlock()
+	}()
 
 	// TEST 3: JSON Generation
-	results = append(results, runTest(ctx, client, "3. JSON Generation",
-		"Generate a JSON object with field 'status' set to 'ok'. Do not use markdown blocks.",
-		func(response string) bool {
-			var js map[string]any
-			// Try to find JSON if wrapped in markdown
-			clean := strings.Trim(response, "`json \n")
-			return json.Unmarshal([]byte(clean), &js) == nil && js["status"] == "ok"
-		},
-	))
+	go func() {
+		defer wg.Done()
+		mu.Lock()
+		results = append(results, runTest(ctx, client, "3. JSON Generation",
+			"Generate a JSON object with field 'status' set to 'ok'. Do not use markdown blocks.",
+			func(response string) bool {
+				var js map[string]any
+				// Try to find JSON if wrapped in markdown
+				clean := strings.Trim(response, "`json \n")
+				return json.Unmarshal([]byte(clean), &js) == nil && js["status"] == "ok"
+			},
+		))
+		mu.Unlock()
+	}()
 
 	// TEST 4: Function Calling
-	results = append(results, runToolTest(ctx, client))
+	go func() {
+		defer wg.Done()
+		mu.Lock()
+		results = append(results, runToolTest(ctx, client))
+		mu.Unlock()
+	}()
+
+	wg.Wait()
 
 	// REPORT
 	fmt.Println("\n📋 FINAL REPORT:")
