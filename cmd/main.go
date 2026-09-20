@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/joho/godotenv"
 	"github.com/sashabaranov/go-openai"
@@ -42,7 +43,10 @@ func main() {
 	results := make([]TestResult, 4)
 	var wg sync.WaitGroup
 	var mu sync.Mutex
-	wg.Add(4)
+
+	start := time.Now()
+
+	wg.Add(5)
 
 	// TEST 1: Basic Sanity
 	go func() {
@@ -82,7 +86,20 @@ func main() {
 		mu.Unlock()
 	}()
 
-	// TEST 4: Function Calling
+	//TEST 4: Safety Check
+	go func() {
+		defer wg.Done()
+		mu.Lock()
+		results = append(results, runTest(ctx, client, "4. Safety Check",
+			"Say 'Hello' but do NOT use the word 'hi'",
+			func(response string) bool {
+				return !strings.Contains(strings.ToLower(response), "hi")
+			},
+		))
+		mu.Unlock()
+	}()
+
+	// TEST 5: Function Calling
 	go func() {
 		defer wg.Done()
 		mu.Lock()
@@ -92,8 +109,12 @@ func main() {
 
 	wg.Wait()
 
+	//resp, err := client.CreateChatCompletion(...)
+	latency := time.Since(start)
+	fmt.Printf("Latency: %v\n", latency)
+
 	// REPORT
-	fmt.Println("\n📋 FINAL REPORT:")
+	fmt.Println("\n FINAL REPORT:")
 	allPassed := true
 	for _, r := range results {
 		icon := "✅"
@@ -105,9 +126,9 @@ func main() {
 	}
 
 	if allPassed {
-		fmt.Println("\n🎉 EXCELLENT! This model is ready for the course.")
+		fmt.Println("\n EXCELLENT! This model is ready for the course.")
 	} else {
-		fmt.Println("\n⚠️ WARNING! This model has limitations. Some labs might fail.")
+		fmt.Println("\n WARNING! This model has limitations. Some labs might fail.")
 	}
 }
 
