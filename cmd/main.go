@@ -43,6 +43,7 @@ func main() {
 
 	reader := bufio.NewReader(os.Stdin)
 	ctx := context.Background()
+	userInput := "Проверь статус сервера web-01"
 
 	//fmt.Println("Starting Model Capability Analysis...")
 	//fmt.Printf("Endpoint: %s\n", config.BaseURL)
