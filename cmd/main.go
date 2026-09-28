@@ -33,22 +33,15 @@ func main() {
 	}
 	client := openai.NewClientWithConfig(config)
 
-	// memory initialization
-	messages := []openai.ChatCompletionMessage{
-		{
-			Role:    openai.ChatMessageRoleSystem,
-			Content: "Ты опытный Linux администратор. Отвечай кратко и по делу.",
-		},
-	}
-
 	reader := bufio.NewReader(os.Stdin)
 	ctx := context.Background()
 	userInput := "Проверь статус сервера web-01"
 
-	//fmt.Println("Starting Model Capability Analysis...")
-	//fmt.Printf("Endpoint: %s\n", config.BaseURL)
-
-	fmt.Println("DevOps Bot (Lab 01). Type 'exit' to quit.")
+	// memory initialization
+	messages := []openai.ChatCompletionMessage{
+		{Role: openai.ChatMessageRoleSystem, Content: "Ты DevOps инженер. Используй инструменты для проверки сервисов."},
+		{Role: openai.ChatMessageRoleUser, Content: userInput},
+	}
 
 	for {
 		fmt.Print("> ")
