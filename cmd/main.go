@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+
 	"fmt"
 	"log/slog"
 	"os"
@@ -10,6 +11,8 @@ import (
 
 	"github.com/joho/godotenv"
 	"github.com/sashabaranov/go-openai"
+	agent "github.com/voznikaetnepriyazn/agent_labs/internal/agent"
+	tool "github.com/voznikaetnepriyazn/agent_labs/internal/agent/tools"
 )
 
 type TestResult struct {
@@ -18,73 +21,104 @@ type TestResult struct {
 	Details string
 }
 
+//var systemPrompt = `Ты DevOps инженер. Используй инструменты для проверки сервисов.`
+
 func main() {
 	if err := godotenv.Load(); err != nil {
 		slog.Error("Error loading .env file")
 	}
 
+	modelId := os.Getenv("MODEL_ID")
+
 	token := os.Getenv("API_KEY")
 	if token == "" {
-		token = "dummy"
+		slog.Error("API key not found in .env file or invalid")
+		os.Exit(1)
 	}
+
 	config := openai.DefaultConfig(token)
 	if baseURL := os.Getenv("BASE_URL"); baseURL != "" {
 		config.BaseURL = baseURL
 	}
+
 	client := openai.NewClientWithConfig(config)
 
-	reader := bufio.NewReader(os.Stdin)
-	ctx := context.Background()
-	userInput := "Проверь статус сервера web-01"
+	registry := tool.NewRegistry()
 
-	// memory initialization
-	messages := []openai.ChatCompletionMessage{
-		{Role: openai.ChatMessageRoleSystem, Content: "Ты DevOps инженер. Используй инструменты для проверки сервисов."},
-		{Role: openai.ChatMessageRoleUser, Content: userInput},
-	}
+	agentNow := agent.NewAgent(client, registry)
+
+	ctx := context.Background()
+	reader := bufio.NewReader(os.Stdin)
 
 	for {
-		fmt.Print("> ")
-		input, _ := reader.ReadString('\n')
-		input = strings.TrimSpace(input)
+		fmt.Print("Enter your message: ")
 
-		if input == "exit" {
+		input, err := reader.ReadString('\n')
+		if err != nil {
+			slog.Error("Ошибка чтения ввода", "error", err)
 			break
 		}
+
+		input = strings.TrimSpace(input)
 		if input == "" {
 			continue
 		}
 
-		// add User message to history
-		messages = append(messages, openai.ChatCompletionMessage{
-			Role:    openai.ChatMessageRoleUser,
-			Content: input,
-		})
+		slog.Debug("Запрос пользователя", "input", input)
 
-		// call API
-		req := openai.ChatCompletionRequest{
-			Model:    os.Getenv("MODEL_ID"),
-			Messages: messages,
-		}
-
-		// process response
-		resp, err := client.CreateChatCompletion(ctx, req)
+		response, err := agentNow.RunAgent(ctx, input, modelId)
 		if err != nil {
-			fmt.Printf("Error %v/n:", err)
+			slog.Error("Error calling API", "error", err)
+			fmt.Printf("Error: %v\n", err)
 			continue
 		}
 
-		// handle response & add assistant message to history
-		answer := resp.Choices[0].Message.Content
-		fmt.Println("AI:", answer)
-
-		messages = append(messages, openai.ChatCompletionMessage{
-			Role:    openai.ChatMessageRoleAssistant,
-			Content: answer,
-		})
+		fmt.Println("AI:", response)
+		slog.Debug("AI Response", "response", response)
 	}
 
-	/*results := make([]TestResult, 4)
+	/*for {
+			fmt.Print("> ")
+			input, _ := reader.ReadString('\n')
+			input = strings.TrimSpace(input)
+
+			if input == "exit" {
+				break
+			}
+			if input == "" {
+				continue
+			}
+
+			// add User message to history
+			messages = append(messages, openai.ChatCompletionMessage{
+				Role:    openai.ChatMessageRoleUser,
+				Content: input,
+			})
+
+			// call API
+			req := openai.ChatCompletionRequest{
+				Model:    os.Getenv("MODEL_ID"),
+				Messages: messages,
+			}
+
+			// process response
+			resp, err := client.CreateChatCompletion(ctx, req)
+			if err != nil {
+				fmt.Printf("Error %v/n:", err)
+				continue
+			}
+
+			// handle response & add assistant message to history
+			answer := resp.Choices[0].Message.Content
+			fmt.Println("AI:", answer)
+
+			messages = append(messages, openai.ChatCompletionMessage{
+				Role:    openai.ChatMessageRoleAssistant,
+				Content: answer,
+			})
+		}
+
+		results := make([]TestResult, 4)
 		var wg sync.WaitGroup
 		var mu sync.Mutex
 
@@ -196,7 +230,7 @@ func main() {
 	}
 
 	func runToolTest(ctx context.Context, client *openai.Client) TestResult {
-		fmt.Println("Running 4. Function Calling...")
+		fmt.Println("Running 5. Function Calling...")
 		tools := []openai.Tool{
 			{
 				Type: openai.ToolTypeFunction,
@@ -215,12 +249,12 @@ func main() {
 		})
 
 		if err != nil {
-			return TestResult{"4. Function Calling", false, fmt.Sprintf("API Error: %v", err)}
+			return TestResult{"5. Function Calling", false, fmt.Sprintf("API Error: %v", err)}
 		}
 
 		if len(resp.Choices[0].Message.ToolCalls) > 0 {
-			return TestResult{"4. Function Calling", true, "Model successfully generated a tool call."}
+			return TestResult{"5. Function Calling", true, "Model successfully generated a tool call."}
 		}
 
-		return TestResult{"4. Function Calling", false, fmt.Sprintf("Model responded with text instead of tool: '%s'", resp.Choices[0].Message.Content)}*/
+		return TestResult{"5. Function Calling", false, fmt.Sprintf("Model responded with text instead of tool: '%s'", resp.Choices[0].Message.Content)}*/
 }
