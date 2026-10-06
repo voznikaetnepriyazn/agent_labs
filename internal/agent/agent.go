@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	_ "embed"
 	"errors"
 	"fmt"
 	"time"
@@ -13,18 +14,12 @@ import (
 )
 
 const (
-	maxSteps     = 10
-	llmTimeout   = 180 * time.Second
-	systemPrompt = `Ты DevOps инженер. Используй инструменты для проверки сервисов. У тебя есть инструмент check_status для проверки статуса сервера по hostname.
-
-	ПРАВИЛА:
-	1. Когда пользователь просит проверить статус сервера — ВСЕГДА вызывай check_status.
-	2. Никогда не выдумывай результаты проверки.
-	3. Никогда не предлагай пользователю команды — просто вызывай инструмент.
-	4. Если hostname не указан — спроси его у пользователя.
-	5. После получения результата — кратко перескажи его.`
-	//userInput    = "Проверь статус сервера web-01"
+	maxSteps   = 10
+	llmTimeout = 180 * time.Second
 )
+
+//go:embed promt.md
+var systemPromt string
 
 type Agent struct {
 	client   *openai.Client
@@ -36,7 +31,7 @@ func NewAgent(client *openai.Client, registry *tool.Registry) *Agent {
 	return &Agent{
 		client:   client,
 		registry: registry,
-		Session:  NewSession(systemPrompt),
+		Session:  NewSession(systemPromt),
 	}
 }
 
@@ -51,6 +46,8 @@ func (a *Agent) RunAgent(ctx context.Context, userInput string, model string) (s
 		defer cancel()
 
 		start := time.Now()
+
+		//  sending request to LLM
 		response, err := a.client.CreateChatCompletion(llmCtx, openai.ChatCompletionRequest{
 			Model:    model,
 			Messages: a.Messages(),
@@ -67,9 +64,11 @@ func (a *Agent) RunAgent(ctx context.Context, userInput string, model string) (s
 		slog.Debug("LLM request took", "duration", elapsed)
 
 		if err != nil {
+			// context timeout
 			if errors.Is(err, context.DeadlineExceeded) {
 				return "", fmt.Errorf("LLM timed out after %s on step %d", llmTimeout, i+1)
 			}
+			//context canceled
 			if errors.Is(err, context.Canceled) {
 				return "", fmt.Errorf("LLM canceled: %w on step %d", err, i+1)
 			}
@@ -77,24 +76,35 @@ func (a *Agent) RunAgent(ctx context.Context, userInput string, model string) (s
 			return "", fmt.Errorf("LLM error: %w on step %d", err, i+1)
 		}
 
+		// check if LLM returned any choices
 		if len(response.Choices) == 0 {
 			return "", fmt.Errorf("no choices returned from LLM on step %d", i+1)
 		}
 
+		// add LLM response to session
 		msg := response.Choices[0].Message
 		a.AddMessage(msg)
 
+		// check if LLM wants to call a tool
 		if len(msg.ToolCalls) == 0 {
 			slog.Info("final answer", "steps", i+1, "total_time", elapsed)
 			return msg.Content, nil
 		}
 
+		// loop over tool calls
 		for _, tc := range msg.ToolCalls {
 			slog.Debug("tool calling",
 				"tool_name", tc.Function.Name,
 				"tool_args", tc.Function.Arguments,
 			)
 
+			if err := validateToolCall(tc, a.registry); err != nil {
+				slog.Warn("invalid tool_call", "error", err)
+				a.AddToolResult(tc.ID, fmt.Sprintf("Error: %v", err))
+				continue
+			}
+
+			// execute appropriate tool and add result to session
 			res := a.registry.Execute(ctx, tc.Function.Name, tc.Function.Arguments)
 			slog.Info("tool result", "tool_name", tc.Function.Name, "result", res)
 

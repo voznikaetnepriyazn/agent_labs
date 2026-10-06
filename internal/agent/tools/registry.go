@@ -17,7 +17,7 @@ func NewRegistry() *Registry {
 	}
 }
 
-// Register register a tool
+// Register registers a tool
 func (r *Registry) Register(t Tool) {
 	r.tools[t.Name()] = t
 }
@@ -26,6 +26,12 @@ func (r *Registry) RegisterAll(ts []Tool) {
 	for _, t := range ts {
 		r.Register(t)
 	}
+}
+
+// Has returns true if the tool is registered
+func (r *Registry) Has(name string) bool {
+	_, ok := r.tools[name]
+	return ok
 }
 
 // Schemas get the schemas for all registered tools
@@ -45,12 +51,13 @@ func (r *Registry) Schemas() []openai.Tool {
 }
 
 func (r *Registry) Execute(ctx context.Context, name, argsJSON string) string {
-	t, ok := r.tools[name]
+	// check if tool is registered
+	currentTool, ok := r.tools[name]
 	if !ok {
 		return fmt.Sprintf("Error: unknown tool %q", name)
 	}
 
-	result, err := t.Execute(ctx, argsJSON)
+	result, err := currentTool.Execute(ctx, argsJSON)
 	if err != nil {
 		return fmt.Sprintf("Error: %v", err)
 	}

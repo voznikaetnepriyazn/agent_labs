@@ -4,25 +4,24 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	//"github.com/sashabaranov/go-openai"
 )
 
 type Tool interface {
-	// Name возвращает имя инструмента (для LLM и реестра)
+	// Name returns name of tool for LLM and registry
 	Name() string
 
-	// Description возвращает описание для LLM (из .md файла)
+	// Description returns description for LLM from .md file
 	Description() string
 
-	// Parameters возвращает JSON Schema аргументов
+	// Parameters returns JSON Schema
 	Parameters() json.RawMessage
 
-	// Execute выполняет инструмент с заданными аргументами
+	// Execute executes tool с заданными аргументами
 	Execute(ctx context.Context, argsJSON string) (string, error)
 }
 
 var (
-	// ErrInvalidArgs — аргументы не соответствуют JSON Schema
+	// ErrInvalidArgs — arguments do not match JSON Schema
 	ErrInvalidArgs = errors.New("invalid arguments")
 
 	// ErrNotFound — запрошенный ресурс не найден

@@ -5,7 +5,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
-	"os"
+	"net/http"
 
 	tool "github.com/voznikaetnepriyazn/agent_labs/internal/agent/tools"
 )
@@ -13,49 +13,48 @@ import (
 //go:embed status.md
 var description string
 
-// ReadTool reads file
-type ReadTool struct{}
+type StatusTool struct{}
 
-func New() *ReadTool {
-	return &ReadTool{}
+func New() *StatusTool {
+	return &StatusTool{}
 }
 
-func (t *ReadTool) Name() string {
-	return "read"
+func (t *StatusTool) Name() string {
+	return "check_status"
 }
 
-func (t *ReadTool) Description() string {
+func (t *StatusTool) Description() string {
 	return description //содержимое status.md
 }
 
-func (t *ReadTool) Parameters() json.RawMessage {
+func (t *StatusTool) Parameters() json.RawMessage {
 	return json.RawMessage(`{
         "type": "object",
         "properties": {
-            "path": {
+            "hostname": {
                 "type": "string",
-                "description": "path to file"
+                "description": "Server name for checking, web-01 or db-prod for example"
             }
         },
-        "required": ["path"]
+        "required": ["hostname"]
     }`)
 }
 
-func (t *ReadTool) Execute(ctx context.Context, argsJSON string) (string, error) {
-	var args struct {
-		Path string `json:"path"`
-	}
+func (t *StatusTool) Execute(ctx context.Context, argsJSON string) (string, error) {
 	args, err := tool.ParseArgs[struct {
-		Path string `json:"path"`
+		Hostname string `json:"hastname"`
 	}](argsJSON)
 	if err != nil {
 		return "", err
 	}
 
-	content, err := os.ReadFile(args.Path)
+	//logic
+	url := "https://" + args.Hostname + "/health"
+	resp, err := http.Get(url)
 	if err != nil {
-		return "", fmt.Errorf("read file %q: %w", args.Path, err)
+		return "", fmt.Errorf("cannot reach %s: %w", args.Hostname, err)
 	}
+	defer resp.Body.Close()
 
-	return string(content), nil
+	return fmt.Sprintf("Server %s: status=%d", args.Hostname, resp.StatusCode), nil
 }
